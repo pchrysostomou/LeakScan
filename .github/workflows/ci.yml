@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # Job 1: Test & Build
+  # Runs on every push and PR — catches broken builds early
+  # ──────────────────────────────────────────────────────────────────
+  test:
+    name: Test & Build (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build (tsup bundle)
+        run: npm run build
+
+      - name: Verify CLI entry point exists
+        run: test -f dist/index.js
+
+      - name: Smoke test — help flag
+        run: node dist/index.js --help
+
+      - name: Smoke test — patterns list
+        run: node dist/index.js patterns
+
+  # ──────────────────────────────────────────────────────────────────
+  # Job 2: Integration test against a real git repo with planted secrets
+  # Creates a temp git repo, commits a fake .env with mock secrets,
+  # then runs leakscan — expects findings (exit code 1).
+  # ──────────────────────────────────────────────────────────────────
+  integration:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install & build
+        run: npm ci && npm run build
+
+      - name: Configure git identity for test repo
+        run: |
+          git config --global user.email "ci@leakscan.test"
+          git config --global user.name "CI Test Bot"
+
+      - name: Create test git repo with planted secrets
+        run: |
+          mkdir /tmp/test-repo
+          cd /tmp/test-repo
+
+          git init
+          echo "# Test Repo" > README.md
+          git add .
+          git commit -m "chore: initial commit"
+
+          # Plant a fake Groq key in a source file (history leak scenario)
+          echo "GROQ_API_KEY=gsk_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnop1234" > .env.local
+          echo "const x = 1" > index.js
+          git add .
+          git commit -m "feat: add config (accidentally includes secrets)"
+
+          # Remove from current files — but it's still in history
+          rm .env.local
+          git add .
+          git commit -m "fix: remove .env.local"
+
+      - name: Run leakscan — expect findings in git history
+        run: |
+          # Should exit 1 (secrets found in history)
+          node ${{ github.workspace }}/dist/index.js scan --path /tmp/test-repo && exit 1 || true
+
+      - name: Run leakscan -- format json — verify output structure
+        run: |
+          OUTPUT=$(node ${{ github.workspace }}/dist/index.js scan --path /tmp/test-repo --format json 2>/dev/null || true)
+          echo "$OUTPUT" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          assert 'findings' in data, 'Missing findings key'
+          assert 'filesScanned' in data, 'Missing filesScanned key'
+          assert 'commitsChecked' in data, 'Missing commitsChecked key'
+          assert data['commitsChecked'] > 0, 'Should have scanned git history'
+          print('JSON output structure: OK')
+          print(f'Commits checked: {data[\"commitsChecked\"]}')
+          print(f'Findings: {len(data[\"findings\"])}')
+          "
+
+      - name: Run leakscan --format sarif — verify SARIF structure
+        run: |
+          OUTPUT=$(node ${{ github.workspace }}/dist/index.js scan --path /tmp/test-repo --format sarif 2>/dev/null || true)
+          echo "$OUTPUT" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          assert data['version'] == '2.1.0', 'SARIF version mismatch'
+          assert len(data['runs']) == 1, 'Expected 1 run'
+          assert 'tool' in data['runs'][0], 'Missing tool in run'
+          print('SARIF structure: OK')
+          print(f'SARIF rules: {len(data[\"runs\"][0][\"tool\"][\"driver\"][\"rules\"])}')
+          print(f'SARIF results: {len(data[\"runs\"][0][\"results\"])}')
+          "
+
+      - name: Run leakscan --no-history — filesystem only, expect clean
+        run: |
+          # After removing .env.local, filesystem should be clean
+          node ${{ github.workspace }}/dist/index.js scan --path /tmp/test-repo --no-history
+          echo "Clean scan: OK"
+
+  # ──────────────────────────────────────────────────────────────────
+  # Job 3: Self-scan — leakscan scans its own source code
+  # This catches any accidental secrets in the repo itself.
+  # ──────────────────────────────────────────────────────────────────
+  self-scan:
+    name: Self-scan leakscan repo
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install & build
+        run: npm ci && npm run build
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@leakscan.test"
+          git config --global user.name "CI Test Bot"
+
+      - name: Self-scan — leakscan scans itself
+        run: |
+          # Filesystem-only self-scan (test files are ignored via .leakscanignore)
+          node dist/index.js scan --path . --no-history
+          echo "Self-scan: clean ✔"
+
+      # SARIF upload — uncomment when repo is public (requires GitHub Advanced Security or public repo)
+      # - name: Upload SARIF to GitHub Code Scanning
+      #   uses: github/codeql-action/upload-sarif@v3
+      #   if: always()
+      #   with:
+      #     sarif_file: results.sarif

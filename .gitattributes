@@ -1,0 +1,4 @@
+# Normalize line endings to LF for all text files
+* text=auto eol=lf
+*.ts linguist-language=TypeScript
+*.yml linguist-language=YAML

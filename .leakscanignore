@@ -1,0 +1,23 @@
+# .leakscanignore — Whitelist file for leakscan
+# Works like .gitignore — one rule per line, comments start with #
+
+# ─── Ignore test/fixture files ────────────────────────────────────────────────
+# These directories intentionally contain fake secrets for testing
+
+*.test.ts
+*.spec.ts
+fixtures/
+__mocks__/
+__tests__/
+
+# ─── Ignore specific patterns globally ────────────────────────────────────────
+# Use if a pattern generates too many false positives in this repo
+# Syntax: pattern:<pattern-id>   (see: leakscan patterns)
+
+# pattern:generic-password
+
+# ─── Ignore specific findings ─────────────────────────────────────────────────
+# Use after you've rotated a key and cleaned history, to suppress the known finding
+# Syntax: finding:<commit-short-hash>:<file-path>
+
+# finding:a3f91bc:README.md

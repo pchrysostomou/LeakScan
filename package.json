@@ -1,0 +1,46 @@
+{
+  "name": "leakscan",
+  "version": "0.1.0",
+  "description": "CLI tool that scans Git repos for exposed secrets — API keys, passwords, tokens — in the filesystem and full commit history",
+  "keywords": [
+    "security",
+    "secrets",
+    "git",
+    "cli",
+    "api-keys",
+    "leak-detection"
+  ],
+  "author": "prodromos",
+  "license": "MIT",
+  "bin": {
+    "leakscan": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs --dts --clean",
+    "dev": "ts-node src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^12.1.0",
+    "ora": "^5.4.1",
+    "simple-git": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.1.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
