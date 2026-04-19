@@ -9,6 +9,7 @@
 fixtures/
 __mocks__/
 __tests__/
+.github/workflows/
 
 # ─── Ignore specific patterns globally ────────────────────────────────────────
 # Use if a pattern generates too many false positives in this repo
