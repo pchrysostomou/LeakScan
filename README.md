@@ -1,4 +1,4 @@
-# leakscan
+# LeakScan
 
 > CLI tool that scans Git repos for exposed secrets — API keys, passwords, tokens — in the current filesystem **and the full commit history**.
 
@@ -327,6 +327,3 @@ src/__tests__/
 
 ---
 
-## License
-
-MIT © Prodromos Chrysostomou
